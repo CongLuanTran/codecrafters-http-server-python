@@ -14,6 +14,11 @@ def main():
     path = lines[0].split()[1]
     if path == "/":
         conn.sendall(b"HTTP/1.1 200 OK\r\n\r\n")
+    elif path.startswith("/echo/"):
+        target = path.split("/")[2]
+        conn.sendall(
+            f"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {len(target)}\r\n\r\n{target}".encode()
+        )
     else:
         conn.sendall(b"HTTP/1.1 404 Not Found\r\n\r\n")
 
