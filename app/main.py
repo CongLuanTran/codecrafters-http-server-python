@@ -9,7 +9,13 @@ def main():
     #
     server_socket = socket.create_server(("localhost", 4221), reuse_port=True)
     conn, address = server_socket.accept()  # wait for client
-    conn.sendall(b"HTTP/1.1 200 OK\r\n\r\n")
+    request = conn.recv(4096).decode()
+    lines = request.splitlines()
+    path = lines[0].split()[1]
+    if path == "/":
+        conn.sendall(b"HTTP/1.1 200 OK\r\n\r\n")
+    else:
+        conn.sendall(b"HTTP/1.1 404 Not Found\r\n\r\n")
 
 
 if __name__ == "__main__":
