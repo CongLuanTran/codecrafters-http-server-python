@@ -11,9 +11,14 @@ target_path = args.directory if args.directory else os.getcwd()
 target_dir = Path(target_path)
 
 
-def handle_client(conn):
-    request = conn.recv(4096).decode()
-    request = HTTPRequest(request)
+def handle_client(conn: socket.socket):
+    raw_request = b""
+    while b"\r\n\r\n" not in raw_request:
+        raw_request += conn.recv(1024)
+
+    request = HTTPRequest(raw_request.decode())
+    while len(request.body) < int(request.headers["Content-Length"]):
+        request.body += conn.recv(1024).decode()
 
     if request.path == "/":
         response = http_200_ok("")
@@ -24,7 +29,10 @@ def handle_client(conn):
         response = http_200_ok(request.headers["User-Agent"])
     elif "files" in request.path:
         path = request.path.removeprefix("/files/")
-        response = read_file(path)
+        if request.method == "POST":
+            response = post_file(path, request.body)
+        else:
+            response = read_file(path)
     else:
         response = http_404_not_found()
 
@@ -32,10 +40,16 @@ def handle_client(conn):
     conn.close()
 
 
+def post_file(path: str, content: str):
+    full_path = target_dir / path
+    with open(full_path, "w") as f:
+        f.write(content)
+
+    return http_201_created()
+
+
 def read_file(path: str):
     full_path = target_dir / path
-
-    print(full_path)
 
     if not full_path.exists():
         return http_404_not_found()
@@ -51,6 +65,10 @@ def read_file(path: str):
 
 def http_200_ok(message: str, headers: dict[str, str] = {}):
     return HTTPResponse("HTTP/1.1", 200, "OK", headers, message)
+
+
+def http_201_created():
+    return HTTPResponse("HTTP/1.1", 201, "Created", {}, "")
 
 
 def http_404_not_found():
@@ -86,6 +104,9 @@ class HTTPRequest:
             k.strip(): v.strip()
             for k, v in map(lambda line: line.split(":", 1), head[1:])
         }
+
+        self.headers.setdefault("Content-Type", "text/plain")
+        self.headers.setdefault("Content-Length", len(self.body))
 
     def __str__(self):
         headers = "\r\n".join(f"{k}: {v}" for k, v in self.headers.items())
