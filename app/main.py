@@ -86,6 +86,9 @@ class HTTPResponse:
         self.headers = headers
         self.body = body
 
+        self.headers.setdefault("Content-Type", "text/plain")
+        self.headers.setdefault("Content-Length", "0")
+
     def __str__(self):
         headers = "\r\n".join(f"{k}: {v}" for k, v in self.headers.items())
         return f"{self.version} {self.status_code} {self.status_message}\r\n{headers}\r\n\r\n{self.body}"
