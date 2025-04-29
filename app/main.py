@@ -72,16 +72,17 @@ class HTTPResponse:
 
 
 def handle_client(conn: socket.socket):
-    raw_request = b""
-    while b"\r\n\r\n" not in raw_request:
-        raw_request += conn.recv(1024)
+    while True:
+        raw_request = b""
+        while b"\r\n\r\n" not in raw_request:
+            raw_request += conn.recv(1024)
 
-    request = HTTPRequest(raw_request.decode())
-    while len(request.body) < int(request.headers["Content-Length"]):
-        request.body += conn.recv(1024).decode()
+        request = HTTPRequest(raw_request.decode())
+        while len(request.body) < int(request.headers["Content-Length"]):
+            request.body += conn.recv(1024).decode()
 
-    response = handle_request(request)
-    conn.sendall(bytes(response))
+        response = handle_request(request)
+        conn.sendall(bytes(response))
 
 
 def handle_request(request: HTTPRequest) -> HTTPResponse:
