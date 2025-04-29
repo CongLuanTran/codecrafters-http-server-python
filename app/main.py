@@ -59,7 +59,8 @@ def read_file(path: str):
         content = f.read()
 
     return http_200_ok(
-        content, {"Content-Length": size, "Content-Type": "application/octet-stream"}
+        content,
+        {"Content-Length": str(size), "Content-Type": "application/octet-stream"},
     )
 
 
@@ -134,7 +135,7 @@ class HTTPResponse:
         self.body = body
 
         self.headers.setdefault("Content-Type", "text/plain")
-        self.headers.setdefault("Content-Length", len(self.body))
+        self.headers.setdefault("Content-Length", str(len(self.body)))
 
     def __str__(self):
         headers = "\r\n".join(f"{k}: {v}" for k, v in self.headers.items())
