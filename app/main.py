@@ -68,7 +68,6 @@ class HTTPResponse:
         )
         headers = "\r\n".join(f"{k}: {v}" for k, v in self.headers.items()).encode()
         body = self.body.encode() if isinstance(self.body, str) else self.body
-        print(gzip.decompress(body))
         return status_line + b"\r\n" + headers + b"\r\n\r\n" + body
 
 
