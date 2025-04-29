@@ -103,8 +103,11 @@ def handle_request(request: HTTPRequest) -> HTTPResponse:
         response = http_404_not_found()
 
     if "Accept-Encoding" in request.headers:
-        if request.headers["Accept-Encoding"] in valid_compression:
-            response.headers["Content-Encoding"] = request.headers["Accept-Encoding"]
+        response.headers["Content-Encoding"] = ""
+        for encoding in request.headers["Accept-Encoding"].split(","):
+            if encoding in valid_compression:
+                response.headers["Content-Encoding"] = encoding.strip()
+                break
 
     return response
 
