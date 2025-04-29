@@ -82,15 +82,18 @@ def handle_client(conn: socket.socket):
             while len(request.body) < int(request.headers["Content-Length"]):
                 request.body += conn.recv(1024).decode()
 
-            if request.headers["Connection"] == "close":
-                return
             response = handle_request(request)
             conn.sendall(bytes(response))
+            if response.headers.get("Connection") == "close":
+                return
 
 
 def handle_request(request: HTTPRequest) -> HTTPResponse:
     if request.path == "/":
-        response = http_200_ok("")
+        if request.headers.get("Connection") == "close":
+            response = http_200_ok("", {"Connection": "close"})
+        else:
+            response = http_200_ok("")
     elif "echo" in request.path:
         target = request.path.removeprefix("/echo/")
         response = http_200_ok(target)
