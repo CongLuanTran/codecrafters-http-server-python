@@ -72,17 +72,18 @@ class HTTPResponse:
 
 
 def handle_client(conn: socket.socket):
-    while True:
-        raw_request = b""
-        while b"\r\n\r\n" not in raw_request:
-            raw_request += conn.recv(1024)
+    with conn:
+        while True:
+            raw_request = b""
+            while b"\r\n\r\n" not in raw_request:
+                raw_request += conn.recv(1024)
 
-        request = HTTPRequest(raw_request.decode())
-        while len(request.body) < int(request.headers["Content-Length"]):
-            request.body += conn.recv(1024).decode()
+            request = HTTPRequest(raw_request.decode())
+            while len(request.body) < int(request.headers["Content-Length"]):
+                request.body += conn.recv(1024).decode()
 
-        response = handle_request(request)
-        conn.sendall(bytes(response))
+            response = handle_request(request)
+            conn.sendall(bytes(response))
 
 
 def handle_request(request: HTTPRequest) -> HTTPResponse:
@@ -156,16 +157,11 @@ def main():
     server_socket = socket.create_server(("localhost", 4221), reuse_port=True)
     print("Server is running at port 4221")
 
-    try:
+    with server_socket:
         while True:
             conn, address = server_socket.accept()  # wait for client
             thread = threading.Thread(target=handle_client, args=(conn,))
             thread.start()
-    except Exception as e:
-        print(f"Error: {e}")
-    finally:
-        print("Closing connection")
-        server_socket.close()
 
 
 if __name__ == "__main__":
