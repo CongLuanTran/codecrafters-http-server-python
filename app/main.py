@@ -1,4 +1,5 @@
 import argparse
+import gzip
 import os
 import socket  # noqa: F401
 import threading
@@ -10,6 +11,66 @@ args = parser.parse_args()
 target_path = args.directory if args.directory else os.getcwd()
 target_dir = Path(target_path)
 
+valid_compression = ["gzip"]
+
+
+class HTTPRequest:
+    def __init__(self, request: str):
+        head, self.body = request.split("\r\n\r\n")
+
+        head = head.split("\r\n")
+        self.method, self.path, self.version = head[0].split()
+        self.headers = {
+            k.strip(): v.strip()
+            for k, v in map(lambda line: line.split(":", 1), head[1:])
+        }
+
+        self.headers.setdefault("Content-Type", "text/plain")
+        self.headers.setdefault("Content-Length", str(len(self.body)))
+
+    def __bytes__(self):
+        request_line = f"{self.method} {self.path} {self.version}".encode()
+        headers = "\r\n".join(f"{k}: {v}" for k, v in self.headers.items()).encode()
+        body = self.body.encode()
+        return request_line + b"\r\n" + headers + b"\r\n\r\n" + body
+
+
+class HTTPResponse:
+    def __init__(
+        self,
+        version: str,
+        status_code: int,
+        status_message: str,
+        headers: dict[str, str],
+        body: str,
+    ):
+        self.version = version
+        self.status_code = status_code
+        self.status_message = status_message
+        self.headers = headers
+        self.body = body
+
+        self.headers.setdefault("Content-Type", "text/plain")
+        self.headers.setdefault("Content-Length", str(len(self.body)))
+
+        # if (
+        #     "Content-Encoding" in self.headers
+        #     and "gzip" in self.headers["Content-Encoding"]
+        # ):
+        #     self.body = gzip.compress(body.encode())
+        #     self.headers["Content-Length"] = str(len(self.body))
+        # else:
+        #     self.body = body
+        #
+
+    def __bytes__(self):
+        status_line = (
+            f"{self.version} {self.status_code} {self.status_message}".encode()
+        )
+        headers = "\r\n".join(f"{k}: {v}" for k, v in self.headers.items()).encode()
+        body = self.body.encode() if isinstance(self.body, str) else self.body
+        return status_line + b"\r\n" + headers + b"\r\n\r\n" + body
+
 
 def handle_client(conn: socket.socket):
     raw_request = b""
@@ -20,6 +81,12 @@ def handle_client(conn: socket.socket):
     while len(request.body) < int(request.headers["Content-Length"]):
         request.body += conn.recv(1024).decode()
 
+    response = handle_request(request)
+    conn.sendall(bytes(response))
+    conn.close()
+
+
+def handle_request(request: HTTPRequest) -> HTTPResponse:
     if request.path == "/":
         response = http_200_ok("")
     elif "echo" in request.path:
@@ -36,8 +103,11 @@ def handle_client(conn: socket.socket):
     else:
         response = http_404_not_found()
 
-    conn.sendall(bytes(response))
-    conn.close()
+    if "Accept-Encoding" in request.headers:
+        if request.headers["Accept-Encoding"] in valid_compression:
+            response.headers["Content-Encoding"] = request.headers["Accept-Encoding"]
+
+    return response
 
 
 def post_file(path: str, content: str):
@@ -93,56 +163,6 @@ def main():
     finally:
         print("Closing connection")
         server_socket.close()
-
-
-class HTTPRequest:
-    def __init__(self, request):
-        head, self.body = request.split("\r\n\r\n")
-
-        head = head.split("\r\n")
-        self.method, self.path, self.version = head[0].split()
-        self.headers = {
-            k.strip(): v.strip()
-            for k, v in map(lambda line: line.split(":", 1), head[1:])
-        }
-
-        self.headers.setdefault("Content-Type", "text/plain")
-        self.headers.setdefault("Content-Length", len(self.body))
-
-    def __str__(self):
-        headers = "\r\n".join(f"{k}: {v}" for k, v in self.headers.items())
-        return (
-            f"{self.method} {self.path} {self.version}\r\n{headers}\r\n\r\n{self.body}"
-        )
-
-    def __bytes__(self):
-        return self.__str__().encode()
-
-
-class HTTPResponse:
-    def __init__(
-        self,
-        version: str,
-        status_code: int,
-        status_message: str,
-        headers: dict[str, str],
-        body: str,
-    ):
-        self.version = version
-        self.status_code = status_code
-        self.status_message = status_message
-        self.headers = headers
-        self.body = body
-
-        self.headers.setdefault("Content-Type", "text/plain")
-        self.headers.setdefault("Content-Length", str(len(self.body)))
-
-    def __str__(self):
-        headers = "\r\n".join(f"{k}: {v}" for k, v in self.headers.items())
-        return f"{self.version} {self.status_code} {self.status_message}\r\n{headers}\r\n\r\n{self.body}"
-
-    def __bytes__(self):
-        return self.__str__().encode()
 
 
 if __name__ == "__main__":
