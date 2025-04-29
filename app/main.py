@@ -105,7 +105,7 @@ def handle_request(request: HTTPRequest) -> HTTPResponse:
     if "Accept-Encoding" in request.headers:
         response.headers["Content-Encoding"] = ""
         for encoding in request.headers["Accept-Encoding"].split(","):
-            if encoding in valid_compression:
+            if encoding.strip() in valid_compression:
                 response.headers["Content-Encoding"] = encoding.strip()
                 break
 
