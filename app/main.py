@@ -1,4 +1,5 @@
 import argparse
+import gzip
 import os
 import socket  # noqa: F401
 import threading
@@ -52,15 +53,14 @@ class HTTPResponse:
         self.headers.setdefault("Content-Type", "text/plain")
         self.headers.setdefault("Content-Length", str(len(self.body)))
 
-        # if (
-        #     "Content-Encoding" in self.headers
-        #     and "gzip" in self.headers["Content-Encoding"]
-        # ):
-        #     self.body = gzip.compress(body.encode())
-        #     self.headers["Content-Length"] = str(len(self.body))
-        # else:
-        #     self.body = body
-        #
+    def encode(self, encoding):
+        if not isinstance(self.body, str):
+            return
+
+        if encoding == "gzip":
+            self.body = gzip.compress(self.body.encode())
+            self.headers["Content-Length"] = str(len(self.body))
+            self.headers["Content-Encoding"] = encoding
 
     def __bytes__(self):
         status_line = (
@@ -68,6 +68,7 @@ class HTTPResponse:
         )
         headers = "\r\n".join(f"{k}: {v}" for k, v in self.headers.items()).encode()
         body = self.body.encode() if isinstance(self.body, str) else self.body
+        print(gzip.decompress(body))
         return status_line + b"\r\n" + headers + b"\r\n\r\n" + body
 
 
@@ -103,10 +104,9 @@ def handle_request(request: HTTPRequest) -> HTTPResponse:
         response = http_404_not_found()
 
     if "Accept-Encoding" in request.headers:
-        response.headers["Content-Encoding"] = ""
         for encoding in request.headers["Accept-Encoding"].split(","):
             if encoding.strip() in valid_compression:
-                response.headers["Content-Encoding"] = encoding.strip()
+                response.encode(encoding.strip())
                 break
 
     return response
