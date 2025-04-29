@@ -1,5 +1,4 @@
 import argparse
-import gzip
 import os
 import socket  # noqa: F401
 import threading
@@ -134,7 +133,9 @@ def read_file(path: str):
     )
 
 
-def http_200_ok(message: str, headers: dict[str, str] = {}):
+def http_200_ok(message: str, headers=None):
+    if headers is None:
+        headers = {}
     return HTTPResponse("HTTP/1.1", 200, "OK", headers, message)
 
 
