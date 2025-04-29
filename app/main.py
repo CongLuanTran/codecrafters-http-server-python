@@ -82,7 +82,6 @@ def handle_client(conn: socket.socket):
 
     response = handle_request(request)
     conn.sendall(bytes(response))
-    conn.close()
 
 
 def handle_request(request: HTTPRequest) -> HTTPResponse:
