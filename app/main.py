@@ -1,7 +1,7 @@
+import argparse
 import os
 import socket  # noqa: F401
 import threading
-import argparse
 from pathlib import Path
 
 parser = argparse.ArgumentParser()
