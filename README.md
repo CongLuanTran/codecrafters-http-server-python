@@ -1,3 +1,11 @@
+# Simple HTTP server
+
+## Intro
+
+This is my Python solution for the challenge to build a simple HTTP server
+
+## Challenge description
+
 [![progress-banner](https://backend.codecrafters.io/progress/http-server/146ddcb9-c3f1-4a8a-9705-0081a5a6a7e9)](https://app.codecrafters.io/users/codecrafters-bot?r=2qF)
 
 This is a starting point for Python solutions to the
@@ -14,7 +22,7 @@ and more.
 **Note**: If you're viewing this repo on GitHub, head over to
 [codecrafters.io](https://codecrafters.io) to try the challenge.
 
-# Passing the first stage
+### Passing the first stage
 
 The entry point for your HTTP server implementation is in `app/main.py`. Study
 and uncomment the relevant code, and push your changes to pass the first stage:
@@ -26,7 +34,7 @@ git push origin master
 
 Time to move on to the next stage!
 
-# Stage 2 & beyond
+### Stage 2 & beyond
 
 Note: This section is for stages 2 and beyond.
 
