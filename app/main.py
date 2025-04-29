@@ -1,5 +1,14 @@
+import os
 import socket  # noqa: F401
 import threading
+import argparse
+from pathlib import Path
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--directory", action="store")
+args = parser.parse_args()
+target_path = args.directory if args.directory else os.getcwd()
+target_dir = Path(target_path)
 
 
 def handle_client(conn):
@@ -8,11 +17,14 @@ def handle_client(conn):
 
     if request.path == "/":
         response = http_200_ok("")
-    elif request.path.startswith("/echo/"):
-        target = request.path.split("/")[2]
+    elif "echo" in request.path:
+        target = request.path.removeprefix("/echo/")
         response = http_200_ok(target)
     elif request.path == "/user-agent":
         response = http_200_ok(request.headers["User-Agent"])
+    elif "files" in request.path:
+        path = request.path.removeprefix("/files/")
+        response = read_file(path)
     else:
         response = http_404_not_found()
 
@@ -20,8 +32,24 @@ def handle_client(conn):
     conn.close()
 
 
-def http_200_ok(message):
-    headers = {"Content-Length": f"{len(message)}"} if message else {}
+def read_file(path: str):
+    full_path = target_dir / path
+
+    print(full_path)
+
+    if not full_path.exists():
+        return http_404_not_found()
+
+    size = os.path.getsize(full_path)
+    with open(full_path, "r") as f:
+        content = f.read()
+
+    return http_200_ok(
+        content, {"Content-Length": size, "Content-Type": "application/octet-stream"}
+    )
+
+
+def http_200_ok(message: str, headers: dict[str, str] = {}):
     return HTTPResponse("HTTP/1.1", 200, "OK", headers, message)
 
 
@@ -33,8 +61,6 @@ def main():
     # You can use print statements as follows for debugging, they'll be visible when running tests.
     print("Logs from your program will appear here!")
 
-    # Uncomment this to pass the first stage
-    #
     server_socket = socket.create_server(("localhost", 4221), reuse_port=True)
     print("Server is running at port 4221")
 
@@ -87,7 +113,7 @@ class HTTPResponse:
         self.body = body
 
         self.headers.setdefault("Content-Type", "text/plain")
-        self.headers.setdefault("Content-Length", "0")
+        self.headers.setdefault("Content-Length", len(self.body))
 
     def __str__(self):
         headers = "\r\n".join(f"{k}: {v}" for k, v in self.headers.items())
