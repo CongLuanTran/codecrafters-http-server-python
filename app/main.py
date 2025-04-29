@@ -1,4 +1,23 @@
 import socket  # noqa: F401
+import threading
+
+
+def handle_client(conn):
+    request = conn.recv(4096).decode()
+    request = HTTPRequest(request)
+
+    if request.path == "/":
+        response = http_200_ok("")
+    elif request.path.startswith("/echo/"):
+        target = request.path.split("/")[2]
+        response = http_200_ok(target)
+    elif request.path == "/user-agent":
+        response = http_200_ok(request.headers["User-Agent"])
+    else:
+        response = http_404_not_found()
+
+    conn.sendall(bytes(response))
+    conn.close()
 
 
 def http_200_ok(message):
@@ -22,20 +41,8 @@ def main():
     try:
         while True:
             conn, address = server_socket.accept()  # wait for client
-            request = conn.recv(4096).decode()
-            request = HTTPRequest(request)
-
-            if request.path == "/":
-                response = http_200_ok("")
-            elif request.path.startswith("/echo/"):
-                target = request.path.split("/")[2]
-                response = http_200_ok(target)
-            elif request.path == "/user-agent":
-                response = http_200_ok(request.headers["User-Agent"])
-            else:
-                response = http_404_not_found()
-
-            conn.sendall(bytes(response))
+            thread = threading.Thread(target=handle_client, args=(conn,))
+            thread.start()
     except Exception as e:
         print(f"Error: {e}")
     finally:
