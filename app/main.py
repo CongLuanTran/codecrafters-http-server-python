@@ -82,6 +82,8 @@ def handle_client(conn: socket.socket):
             while len(request.body) < int(request.headers["Content-Length"]):
                 request.body += conn.recv(1024).decode()
 
+            if request.headers["Connection"] == "close":
+                return
             response = handle_request(request)
             conn.sendall(bytes(response))
 
