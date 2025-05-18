@@ -1,9 +1,11 @@
 import argparse
-import gzip
 import os
+import re
+import gzip
 import socket  # noqa: F401
 import threading
 from pathlib import Path
+from typing import Callable
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--directory", action="store")
@@ -11,64 +13,95 @@ args = parser.parse_args()
 target_path = args.directory if args.directory else os.getcwd()
 target_dir = Path(target_path)
 
-valid_compression = ["gzip"]
+ENCODER = ["gzip"]
+
+STASTUS = {
+    200: "OK",
+    201: "Created",
+    404: "Not Found",
+}
+
+Route = tuple[str, re.Pattern, Callable]
+
+routes: list[Route] = []
+
+
+def add_route(method: str, path: str, handler: Callable):
+    pattern = re.compile(path)
+    routes.append((method, pattern, handler))
+
+
+def find_handler(method: str, path: str):
+    for route_method, pattern, handler in routes:
+        if method == route_method and pattern.match(path):
+            return handler
+    return None
 
 
 class HTTPRequest:
-    def __init__(self, request: str):
-        head, self.body = request.split("\r\n\r\n")
+    def __init__(
+        self, method: str, path: str, version: str, headers: dict[str, str], body: str
+    ):
+        self.method = method
+        self.path = path
+        self.version = version
+        self.headers = headers
+        self.body = body
 
-        head = head.split("\r\n")
-        self.method, self.path, self.version = head[0].split()
-        self.headers = {
-            k.strip(): v.strip()
-            for k, v in map(lambda line: line.split(":", 1), head[1:])
-        }
-
-        self.headers.setdefault("Content-Type", "text/plain")
-        self.headers.setdefault("Content-Length", str(len(self.body)))
-
-    def __bytes__(self):
-        request_line = f"{self.method} {self.path} {self.version}".encode()
-        headers = "\r\n".join(f"{k}: {v}" for k, v in self.headers.items()).encode()
-        body = self.body.encode()
-        return request_line + b"\r\n" + headers + b"\r\n\r\n" + body
+    @classmethod
+    def from_raw(cls, raw_request: str):
+        headers_lines, body = raw_request.split("\r\n\r\n", 1)
+        request_line, *header_lines = headers_lines.split("\r\n")
+        method, path, version = request_line.split(" ")
+        headers = {}
+        for line in header_lines:
+            if not line:
+                break
+            header, value = line.split(":", 1)
+            headers[header.strip()] = value.strip()
+        return cls(method, path, version, headers, body)
 
 
 class HTTPResponse:
     def __init__(
         self,
         version: str,
-        status_code: int,
-        status_message: str,
-        headers: dict[str, str],
-        body: str,
+        status: int,
+        headers: dict[str, str] | None = None,
+        body: str = "",
     ):
         self.version = version
-        self.status_code = status_code
-        self.status_message = status_message
-        self.headers = headers
+        self.status = status
+        self.headers = headers or {}
         self.body = body
 
-        self.headers.setdefault("Content-Type", "text/plain")
-        self.headers.setdefault("Content-Length", str(len(self.body)))
+    @classmethod
+    def ok(cls, headers: dict[str, str] | None = None, body: str = ""):
+        if headers is None:
+            headers = {}
+        return cls("HTTP/1.1", 200, headers, body)
 
-    def encode(self, encoding):
-        if not isinstance(self.body, str):
-            return
+    @classmethod
+    def not_found(cls):
+        return cls("HTTP/1.1", 404, {}, "")
 
-        if encoding == "gzip":
-            self.body = gzip.compress(self.body.encode())
-            self.headers["Content-Length"] = str(len(self.body))
-            self.headers["Content-Encoding"] = encoding
+    @classmethod
+    def created(cls):
+        return cls("HTTP/1.1", 201, {}, "")
 
     def __bytes__(self):
-        status_line = (
-            f"{self.version} {self.status_code} {self.status_message}".encode()
+        encoding = self.headers.get("Content-Encoding", "")
+        if encoding:
+            body = gzip.compress(self.body.encode())
+            self.headers["Content-Length"] = str(len(body))
+        else:
+            body = self.body.encode()
+        response_line = f"{self.version} {self.status} {STASTUS[self.status]}\r\n"
+        headers_lines = "".join(
+            header + ": " + value + "\r\n" for header, value in self.headers.items()
         )
-        headers = "\r\n".join(f"{k}: {v}" for k, v in self.headers.items()).encode()
-        body = self.body.encode() if isinstance(self.body, str) else self.body
-        return status_line + b"\r\n" + headers + b"\r\n\r\n" + body
+        head = (response_line + headers_lines + "\r\n").encode()
+        return head + body
 
 
 def handle_client(conn: socket.socket):
@@ -78,81 +111,87 @@ def handle_client(conn: socket.socket):
             while b"\r\n\r\n" not in raw_request:
                 raw_request += conn.recv(1024)
 
-            request = HTTPRequest(raw_request.decode())
-            while len(request.body) < int(request.headers["Content-Length"]):
+            request = HTTPRequest.from_raw(raw_request.decode())
+            while len(request.body) < int(request.headers.get("Content-Length", 0)):
                 request.body += conn.recv(1024).decode()
 
             response = handle_request(request)
-            conn.sendall(bytes(response))
-            if response.headers.get("Connection") == "close":
+            if request.headers.get("Connection") == "close":
+                response.headers["Connection"] = "close"
+                conn.sendall(bytes(response))
                 return
+            conn.sendall(bytes(response))
 
 
 def handle_request(request: HTTPRequest) -> HTTPResponse:
-    if request.path == "/":
-        if request.headers.get("Connection") == "close":
-            response = http_200_ok("", {"Connection": "close"})
-        else:
-            response = http_200_ok("")
-    elif "echo" in request.path:
-        target = request.path.removeprefix("/echo/")
-        response = http_200_ok(target)
-    elif request.path == "/user-agent":
-        response = http_200_ok(request.headers["User-Agent"])
-    elif "files" in request.path:
-        path = request.path.removeprefix("/files/")
-        if request.method == "POST":
-            response = post_file(path, request.body)
-        else:
-            response = read_file(path)
+    handler = find_handler(request.method, request.path)
+    if handler:
+        response = handler(request)
     else:
-        response = http_404_not_found()
-
-    if "Accept-Encoding" in request.headers:
-        for encoding in request.headers["Accept-Encoding"].split(","):
-            if encoding.strip() in valid_compression:
-                response.encode(encoding.strip())
-                break
-
-    return response
+        response = HTTPResponse.not_found()
+    return encode_response(request, response)
 
 
-def post_file(path: str, content: str):
+def home(_request: HTTPRequest):
+    return HTTPResponse.ok()
+
+
+def echo(request):
+    message = re.sub(r"^/echo/", "", request.path)
+    headers = {
+        "Content-Type": "text/plain",
+        "Content-Length": str(len(message)),
+    }
+    return HTTPResponse.ok(headers, message)
+
+
+def user_agent(request: HTTPRequest):
+    user_agent = request.headers.get("User-Agent", "")
+    headers = {
+        "Content-Type": "text/plain",
+        "Content-Length": str(len(user_agent)),
+    }
+    return HTTPResponse.ok(headers, user_agent)
+
+
+def post_file(request: HTTPRequest):
+    path = re.sub(r"^/files/", "", request.path)
+    content = request.body
     full_path = target_dir / path
     with open(full_path, "w") as f:
         f.write(content)
+    return HTTPResponse.created()
 
-    return http_201_created()
 
-
-def read_file(path: str):
+def read_file(request: HTTPRequest):
+    path = re.sub(r"^/files/", "", request.path)
     full_path = target_dir / path
-
     if not full_path.exists():
-        return http_404_not_found()
-
+        return HTTPResponse.not_found()
     size = os.path.getsize(full_path)
     with open(full_path, "r") as f:
         content = f.read()
-
-    return http_200_ok(
-        content,
-        {"Content-Length": str(size), "Content-Type": "application/octet-stream"},
-    )
-
-
-def http_200_ok(message: str, headers=None):
-    if headers is None:
-        headers = {}
-    return HTTPResponse("HTTP/1.1", 200, "OK", headers, message)
+    headers = {
+        "Content-Type": "application/octet-stream",
+        "Content-Length": str(size),
+    }
+    return HTTPResponse.ok(headers, content)
 
 
-def http_201_created():
-    return HTTPResponse("HTTP/1.1", 201, "Created", {}, "")
+def encode_response(request: HTTPRequest, response: HTTPResponse):
+    encoding = request.headers.get("Accept-Encoding", "")
+    for enc in ENCODER:
+        if enc in encoding:
+            response.headers["Content-Encoding"] = enc
+            break
+    return response
 
 
-def http_404_not_found():
-    return HTTPResponse("HTTP/1.1", 404, "Not Found", {}, "")
+add_route("GET", r"^/$", home)
+add_route("GET", r"^/echo/(?P<message>.*)$", echo)
+add_route("GET", r"/user-agent", user_agent)
+add_route("GET", r"^/files/(?P<file>.*)", read_file)
+add_route("POST", r"^/files/(?P<file>.*)", post_file)
 
 
 def main():
@@ -164,7 +203,7 @@ def main():
 
     with server_socket:
         while True:
-            conn, address = server_socket.accept()  # wait for client
+            conn, _addr = server_socket.accept()  # wait for client
             thread = threading.Thread(target=handle_client, args=(conn,))
             thread.start()
 
