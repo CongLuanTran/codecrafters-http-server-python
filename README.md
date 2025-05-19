@@ -2,7 +2,9 @@
 
 ## Intro
 
-This is my Python solution for the challenge to build a simple HTTP server
+This is my Python solution for the challenge to build a simple HTTP server from scratch.
+It's not a practical product but rather just a educational project.
+I'm quite happy that this teach me more about how HTTP works.
 
 ## Challenge description
 
