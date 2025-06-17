@@ -1,17 +1,13 @@
-import argparse
+import typer
 import os
 import re
 import gzip
 import socket  # noqa: F401
 import threading
 from pathlib import Path
-from typing import Callable
+from typing import Annotated, Callable, final
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--directory", action="store")
-args = parser.parse_args()
-target_path = args.directory if args.directory else os.getcwd()
-target_dir = Path(target_path)
+target_dir = Path(os.getcwd())
 
 ENCODER = ["gzip"]
 
@@ -21,24 +17,19 @@ STASTUS = {
     404: "Not Found",
 }
 
-Route = tuple[str, re.Pattern, Callable]
 
-routes: list[Route] = []
-
-
-def add_route(method: str, path: str, handler: Callable):
-    pattern = re.compile(path)
-    routes.append((method, pattern, handler))
-
-
-def find_handler(method: str, path: str):
-    for route_method, pattern, handler in routes:
-        if method == route_method and pattern.match(path):
-            return handler
-    return None
-
-
+@final
 class HTTPRequest:
+    """Represents an HTTP request.
+
+    Attributes:
+        method (str): The HTTP method (e.g., "GET", "POST").
+        path (str): The request path (e.g., "/echo/hello").
+        version (str): The HTTP version (e.g., "HTTP/1.1").
+        headers (dict[str, str]): The request headers (e.g., {"Host": "localhost"}).
+        body (str): The request body (e.g., "Hello, world!").
+    """
+
     def __init__(
         self, method: str, path: str, version: str, headers: dict[str, str], body: str
     ):
@@ -50,10 +41,18 @@ class HTTPRequest:
 
     @classmethod
     def from_raw(cls, raw_request: str):
+        """Parse a raw HTTP request string into an HTTPRequest object.
+
+        Args:
+            raw_request (str): The raw HTTP request string, including headers and body.
+
+        Returns:
+            HTTPRequest: The parsed HTTPRequest object.
+        """
         headers_lines, body = raw_request.split("\r\n\r\n", 1)
         request_line, *header_lines = headers_lines.split("\r\n")
         method, path, version = request_line.split(" ")
-        headers = {}
+        headers: dict[str, str] = {}
         for line in header_lines:
             if not line:
                 break
@@ -62,7 +61,17 @@ class HTTPRequest:
         return cls(method, path, version, headers, body)
 
 
+@final
 class HTTPResponse:
+    """Represents an HTTP response.
+
+    Attributes:
+        version (str): The HTTP version (e.g., "HTTP/1.1").
+        status (str): The HTTP status code (e.g., 200, 404).
+        headers (dict[str, str] | None): The response headers (e.g., {"Content-Type": "text/plain"}).
+        body (str): The response body (e.g., "Hello, world!").
+    """
+
     def __init__(
         self,
         version: str,
@@ -77,16 +86,37 @@ class HTTPResponse:
 
     @classmethod
     def ok(cls, headers: dict[str, str] | None = None, body: str = ""):
+        """Returns a 200 OK HTTP response.
+
+        The headers is None by default, but can be provided to include additional headers.
+
+        Args:
+            headers (dict[str, str] | None): The response headers (optional).
+            body (str): The response body.
+
+        Returns:
+            HTTPResponse: An HTTPResponse object with status 200 OK.
+        """
         if headers is None:
             headers = {}
         return cls("HTTP/1.1", 200, headers, body)
 
     @classmethod
     def not_found(cls):
+        """Returns a 404 Not Found HTTP response.
+
+        Returns:
+            HTTPResponse: An HTTPResponse object with status 404 Not Found.
+        """
         return cls("HTTP/1.1", 404, {}, "")
 
     @classmethod
     def created(cls):
+        """Returns a 201 Created HTTP response.
+
+        Returns:
+            HTTPResponse: An HTTPResponse object with status 201 Created.
+        """
         return cls("HTTP/1.1", 201, {}, "")
 
     def __bytes__(self):
@@ -102,6 +132,43 @@ class HTTPResponse:
         )
         head = (response_line + headers_lines + "\r\n").encode()
         return head + body
+
+
+Route = tuple[str, re.Pattern[str], Callable[..., HTTPResponse]]
+
+routes: list[Route] = []
+
+
+def add_route(method: str, path: str, handler: Callable[..., HTTPResponse]):
+    """Add a route to the server.
+
+    A route is defined by an HTTP method, a path pattern, and a handler function.
+
+    Args:
+        method (str): The HTTP method (e.g., "GET", "POST").
+        path (str): The path pattern to match (e.g., "^/echo/.*$").
+        handler (Callable): The function to handle requests to this route.
+    """
+    pattern = re.compile(path)
+    routes.append((method, pattern, handler))
+
+
+def find_handler(method: str, path: str):
+    """Find the handler for a given method and path.
+
+    Returns the handler function if a matching route is found, otherwise returns None.
+
+    Args:
+        method (str): The HTTP method (e.g., "GET", "POST").
+        path (str): The request path to match against the route patterns.
+
+    Returns:
+        Callable | None: The handler function if a match is found, otherwise None.
+    """
+    for route_method, pattern, handler in routes:
+        if method == route_method and pattern.match(path):
+            return handler
+    return None
 
 
 def handle_client(conn: socket.socket):
@@ -136,7 +203,7 @@ def home(_request: HTTPRequest):
     return HTTPResponse.ok()
 
 
-def echo(request):
+def echo(request: HTTPRequest):
     message = re.sub(r"^/echo/", "", request.path)
     headers = {
         "Content-Type": "text/plain",
@@ -159,7 +226,7 @@ def post_file(request: HTTPRequest):
     content = request.body
     full_path = target_dir / path
     with open(full_path, "w") as f:
-        f.write(content)
+        _ = f.write(content)
     return HTTPResponse.created()
 
 
@@ -194,7 +261,10 @@ add_route("GET", r"^/files/(?P<file>.*)", read_file)
 add_route("POST", r"^/files/(?P<file>.*)", post_file)
 
 
-def main():
+def main(directory: Annotated[str | None, typer.Option()] = None):
+    if directory:
+        global target_dir
+        target_dir = Path(directory).resolve()
     # You can use print statements as follows for debugging, they'll be visible when running tests.
     print("Logs from your program will appear here!")
 
@@ -209,4 +279,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    typer.run(main)
