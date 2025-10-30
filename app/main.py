@@ -171,6 +171,13 @@ def find_handler(method: str, path: str):
 
 
 def handle_client(conn: socket.socket):
+    """Loop to handle one client.
+
+    This will run until the client disconnect.
+
+    Args:
+        conn (socket): The connection socket.
+    """
     with conn:
         while True:
             raw_request = b""
@@ -190,6 +197,17 @@ def handle_client(conn: socket.socket):
 
 
 def handle_request(request: HTTPRequest) -> HTTPResponse:
+    """Handle one request.
+
+    Find the suitable handler for the request and return the response of that
+    handler if found, else return the 404 not found response.
+
+    Args:
+        request (HTTPRequest): The request object
+
+    Returns:
+        HTTPResponse: The response object
+    """
     if handler := find_handler(request.method, request.path):
         response = handler(request)
     else:
