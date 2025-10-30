@@ -194,7 +194,12 @@ def handle_request(request: HTTPRequest) -> HTTPResponse:
         response = handler(request)
     else:
         response = HTTPResponse.not_found()
-    return encode_response(request, response)
+    encoding = request.headers.get("Accept-Encoding", "")
+    for enc in ENCODER:
+        if enc in encoding:
+            response.headers["Content-Encoding"] = enc
+            break
+    return response
 
 
 def home(_request: HTTPRequest):
@@ -241,15 +246,6 @@ def read_file(request: HTTPRequest):
         "Content-Length": str(size),
     }
     return HTTPResponse.ok(headers, content)
-
-
-def encode_response(request: HTTPRequest, response: HTTPResponse):
-    encoding = request.headers.get("Accept-Encoding", "")
-    for enc in ENCODER:
-        if enc in encoding:
-            response.headers["Content-Encoding"] = enc
-            break
-    return response
 
 
 add_route("GET", r"^/$", home)
