@@ -120,8 +120,7 @@ class HTTPResponse:
         return cls("HTTP/1.1", 201, {}, "")
 
     def __bytes__(self):
-        encoding = self.headers.get("Content-Encoding", "")
-        if encoding:
+        if self.headers.get("Content-Encoding", ""):
             body = gzip.compress(self.body.encode())
             self.headers["Content-Length"] = str(len(body))
         else:
@@ -191,8 +190,7 @@ def handle_client(conn: socket.socket):
 
 
 def handle_request(request: HTTPRequest) -> HTTPResponse:
-    handler = find_handler(request.method, request.path)
-    if handler:
+    if handler := find_handler(request.method, request.path):
         response = handler(request)
     else:
         response = HTTPResponse.not_found()
