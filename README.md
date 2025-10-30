@@ -2,7 +2,8 @@
 
 ## Intro
 
-This is my Python solution for the challenge to build a simple HTTP server
+A simple HTTP server built as a guided challenge from CodeCrafters. It is a educational practice, not a real product.
+The server support adding request handlers for methods and paths and can resolute to the correct handler.
 
 ## Challenge description
 
